@@ -5,8 +5,10 @@ Lê vértices (v), normais (vn) e faces triangulares (f).
 Coordenadas de textura (vt) são ignoradas, conforme especificação do projeto.
 
 Formatos de face suportados:
-    v/vt/vn   →  ex: "2/1/1"
-    v//vn     →  ex: "2//1"
+    v         ->  ex: "2"
+    v/vt     ->  ex: "2/1"
+    v/vt/vn  ->  ex: "2/1/1"
+    v//vn    ->  ex: "2//1"
 """
 from __future__ import annotations
 import sys
@@ -25,14 +27,25 @@ class FaceData:
     material:       MaterialProperties = field(default_factory=MaterialProperties)
 
 
-def _parse_face_token(token: str) -> tuple[int, int]:
+def _resolve_obj_index(value: str, current_size: int) -> int:
+    idx = int(value)
+    if idx == 0:
+        raise ValueError("OBJ usa índices iniciando em 1; índice 0 é inválido.")
+    if idx < 0:
+        return current_size + idx
+    return idx - 1
+
+
+def _parse_face_token(token: str, vertex_count: int, normal_count: int) -> tuple[int, int | None]:
     """
     Converte um token de face ("v/vt/vn" ou "v//vn") em
     (vertex_index, normal_index) com índices baseados em 0.
     """
     parts = token.split("/")
-    vertex_idx = int(parts[0]) - 1
-    normal_idx = int(parts[2]) - 1 if len(parts) >= 3 and parts[2] else 0
+    vertex_idx = _resolve_obj_index(parts[0], vertex_count)
+    normal_idx = None
+    if len(parts) >= 3 and parts[2]:
+        normal_idx = _resolve_obj_index(parts[2], normal_count)
     return vertex_idx, normal_idx
 
 
@@ -76,7 +89,9 @@ class ObjReader:
         prefix, *rest = parts
 
         if prefix == "mtllib" and rest:
-            mtl_path = obj_path.with_suffix(".mtl")
+            mtl_path = (obj_path.parent / rest[0]).resolve()
+            if not mtl_path.exists():
+                mtl_path = obj_path.with_suffix(".mtl")
             self._cmap = Colormap(str(mtl_path))
 
         elif prefix == "usemtl" and rest:
@@ -89,12 +104,17 @@ class ObjReader:
             self._normals.append(Vetor(float(rest[0]), float(rest[1]), float(rest[2])))
 
         elif prefix == "f" and len(rest) >= 3:
-            face = FaceData(material=self._cur_material)
-            for i in range(3):
-                vi, ni = _parse_face_token(rest[i])
-                face.vertice_indice[i] = vi
-                face.normal_indice[i]  = ni
-            self._faces.append(face)
+            vertices_normais = [
+                _parse_face_token(token, len(self._vertices), len(self._normals))
+                for token in rest
+            ]
+            for i in range(1, len(vertices_normais) - 1):
+                triangulo = [vertices_normais[0], vertices_normais[i], vertices_normais[i + 1]]
+                face = FaceData(material=self._cur_material)
+                for j, (vi, ni) in enumerate(triangulo):
+                    face.vertice_indice[j] = vi
+                    face.normal_indice[j] = ni if ni is not None else -1
+                self._faces.append(face)
 
     # ------------------------------------------------------------------
     # Getters (espelham a API C++)

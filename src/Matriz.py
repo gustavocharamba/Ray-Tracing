@@ -1,79 +1,99 @@
 import math
-from src.Vetor import Vetor
+
 from src.Ponto import Ponto
-from src.Matriz import Matriz
+from src.Vetor import Vetor
 
 
-class Malha:
-    def __init__(self, obj_reader, matriz_transformacao=None, material=None):
-        self.n_vertices = len(obj_reader.get_vertices())
-        if self.n_vertices < 3:
-            raise ValueError("O número total de vértices deve ser >= 3.")
+class Matriz:
+    """Matriz 4x4 para transformações afins em coordenadas homogêneas."""
 
-        faces_lidas = obj_reader.get_faces()
-        self.n_triangulos = len(faces_lidas)
-        self.material = material[cite: 2, 3]
+    def __init__(self, dados=None):
+        if dados is None:
+            self.dados = [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        else:
+            self.dados = [[float(valor) for valor in linha] for linha in dados]
 
-        matriz = matriz_transformacao if matriz_transformacao else Matriz()
-        # Transforma os vértices para o espaço do mundo na criação[cite: 3, 4]
-        self.lista_vertices = [matriz.aplicar_ponto(v) for v in obj_reader.get_vertices()]
+    def __matmul__(self, outra):
+        resultado = [[0.0 for _ in range(4)] for _ in range(4)]
+        for i in range(4):
+            for j in range(4):
+                resultado[i][j] = sum(self.dados[i][k] * outra.dados[k][j] for k in range(4))
+        return Matriz(resultado)
 
-        self.lista_indices = []
-        self.normais_triangulos = []
-        self.normais_vertices = []
-        self._construir_geometria_e_normais(faces_lidas)
+    def aplicar_ponto(self, ponto: Ponto) -> Ponto:
+        x, y, z = ponto.x, ponto.y, ponto.z
+        valores = [
+            self.dados[0][0] * x + self.dados[0][1] * y + self.dados[0][2] * z + self.dados[0][3],
+            self.dados[1][0] * x + self.dados[1][1] * y + self.dados[1][2] * z + self.dados[1][3],
+            self.dados[2][0] * x + self.dados[2][1] * y + self.dados[2][2] * z + self.dados[2][3],
+            self.dados[3][0] * x + self.dados[3][1] * y + self.dados[3][2] * z + self.dados[3][3],
+        ]
+        w = valores[3]
+        if abs(w) > 1e-12 and abs(w - 1.0) > 1e-12:
+            return Ponto(valores[0] / w, valores[1] / w, valores[2] / w)
+        return Ponto(valores[0], valores[1], valores[2])
 
-    def _get_modulo(self, v):
-        """Cálculo manual da magnitude (corrige erro de atributo)."""
-        return math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)
+    def aplicar_vetor(self, vetor: Vetor) -> Vetor:
+        x, y, z = vetor.x, vetor.y, vetor.z
+        return Vetor(
+            self.dados[0][0] * x + self.dados[0][1] * y + self.dados[0][2] * z,
+            self.dados[1][0] * x + self.dados[1][1] * y + self.dados[1][2] * z,
+            self.dados[2][0] * x + self.dados[2][1] * y + self.dados[2][2] * z,
+        )
 
-    def _construir_geometria_e_normais(self, faces):
-        for face in faces:
-            self.lista_indices.append(face.vertice_indice)
+    @staticmethod
+    def translacao(dx, dy, dz):
+        return Matriz([
+            [1.0, 0.0, 0.0, dx],
+            [0.0, 1.0, 0.0, dy],
+            [0.0, 0.0, 1.0, dz],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
 
-        for indices in self.lista_indices:
-            v0, v1, v2 = self.lista_vertices[indices[0]], self.lista_vertices[indices[1]], self.lista_vertices[
-                indices[2]]
-            normal = (v1 - v0).prodVetorial(v2 - v0)
+    @staticmethod
+    def escala(sx, sy, sz):
+        return Matriz([
+            [sx, 0.0, 0.0, 0.0],
+            [0.0, sy, 0.0, 0.0],
+            [0.0, 0.0, sz, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
 
-            mag = self._get_modulo(normal)[cite: 3]
-            if mag > 0:
-                normal = Vetor(normal.x / mag, normal.y / mag, normal.z / mag)
-            self.normais_triangulos.append(normal)
+    @staticmethod
+    def rotacao_x(angulo):
+        c, s = math.cos(angulo), math.sin(angulo)
+        return Matriz([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, c, -s, 0.0],
+            [0.0, s, c, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
 
-        self.normais_vertices = [Vetor(0.0, 0.0, 0.0) for _ in range(self.n_vertices)]
-        for i in range(self.n_triangulos):
-            n = self.normais_triangulos[i]
-            for idx in self.lista_indices[i]:
-                self.normais_vertices[idx] = self.normais_vertices[idx] + n
+    @staticmethod
+    def rotacao_y(angulo):
+        c, s = math.cos(angulo), math.sin(angulo)
+        return Matriz([
+            [c, 0.0, s, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [-s, 0.0, c, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
 
-        for i in range(self.n_vertices):
-            mag = self._get_modulo(self.normais_vertices[i])
-            if mag > 0:
-                nv = self.normais_vertices[i]
-                self.normais_vertices[i] = Vetor(nv.x / mag, nv.y / mag, nv.z / mag)
-            else:
-                self.normais_vertices[i] = Vetor(0, 1, 0)
+    @staticmethod
+    def rotacao_z(angulo):
+        c, s = math.cos(angulo), math.sin(angulo)
+        return Matriz([
+            [c, -s, 0.0, 0.0],
+            [s, c, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
 
-    def intersectar(self, raio):
-        """Interseção Möller-Trumbore otimizada[cite: 3]."""
-        t_min, EPSILON = float("inf"), 1e-6
-        for indices in self.lista_indices:
-            v0, v1, v2 = self.lista_vertices[indices[0]], self.lista_vertices[indices[1]], self.lista_vertices[
-                indices[2]]
-            edge1, edge2 = v1 - v0, v2 - v0
-            h = raio.direcao.prodVetorial(edge2)
-            a = edge1.prodEscalar(h)
-
-            if -EPSILON < a < EPSILON: continue
-            f = 1.0 / a
-            s = raio.origem - v0
-            u = f * s.prodEscalar(h)
-            if u < 0.0 or u > 1.0: continue
-            q = s.prodVetorial(edge1)
-            v = f * raio.direcao.prodEscalar(q)
-            if v < 0.0 or (u + v) > 1.0: continue
-            t = f * edge2.prodEscalar(q)
-
-            if t > EPSILON and t < t_min: t_min = t
-        return t_min if t_min != float("inf") else None
+    @staticmethod
+    def rotacao(rx, ry, rz):
+        return Matriz.rotacao_z(rz) @ Matriz.rotacao_y(ry) @ Matriz.rotacao_x(rx)

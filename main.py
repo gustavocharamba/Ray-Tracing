@@ -1,5 +1,4 @@
 import sys
-import os
 from pathlib import Path
 
 from src.Ponto import Ponto
@@ -28,27 +27,49 @@ def gerar_raio(i, j, C, u, v, w, largura, altura, d):
     direcao = ((-w) * d + u * px + v * py).normalizar()
     return Raio(C, direcao)
 
+def matriz_transformacao(obj):
+    matriz = Matriz()
+    if obj.transforms:
+        for transform in obj.transforms:
+            dados = transform.data
+            if transform.t_type == "translation":
+                atual = Matriz.translacao(dados.x, dados.y, dados.z)
+            elif transform.t_type == "scaling":
+                atual = Matriz.escala(dados.x, dados.y, dados.z)
+            elif transform.t_type == "rotation":
+                atual = Matriz.rotacao(dados.x, dados.y, dados.z)
+            else:
+                continue
+            matriz = atual @ matriz
+        return matriz
+
+    pos = obj.relative_pos
+    return Matriz.translacao(pos.x, pos.y, pos.z)
+
 def criar_objetos(scene, scene_file_path):
     objetos = []
     project_root = Path(__file__).resolve().parent
     scene_dir = Path(scene_file_path).resolve().parent
 
     for obj in scene.objects:
-        posicao = obj.relative_pos[cite: 2]
+        posicao = obj.relative_pos
 
         if obj.obj_type == "sphere":
-            raio = obj.numeric_data.get("radius", 1.0)[cite: 2]
+            raio = obj.numeric_data.get("radius", 1.0)
             objetos.append(Esfera(posicao, raio, obj.material))
 
         elif obj.obj_type == "plane":
-            normal = obj.vetor_point_data.get("normal")[cite: 2]
+            normal = obj.vetor_point_data.get("normal")
+            if normal is None:
+                print("ERRO: plano sem normal.")
+                continue
             objetos.append(Plano(posicao, normal, obj.material))
 
         elif obj.obj_type == "mesh":
-            rel_path = obj.other_properties.get("path")[cite: 2]
-            if not rel_path: continue
+            rel_path = obj.other_properties.get("path")
+            if not rel_path:
+                continue
 
-            # Busca agressiva por nomes de pastas comuns (input/inputs)[cite: 2]
             nome_arquivo = Path(rel_path).name
             tentativas = [
                 (scene_dir / rel_path).resolve(),
@@ -60,18 +81,17 @@ def criar_objetos(scene, scene_file_path):
             full_path = next((p for p in tentativas if p.exists()), None)
 
             if not full_path:
-                print(f"❌ ERRO: Arquivo não encontrado: {rel_path}")
+                print(f"ERRO: Arquivo não encontrado: {rel_path}")
                 continue
 
             try:
                 leitor = ObjReader(str(full_path))
-                transformacao = Matriz()
-                # Integração com material da cena e matriz[cite: 3, 4]
+                transformacao = matriz_transformacao(obj)
                 malha = Malha(leitor, matriz_transformacao=transformacao, material=obj.material)
                 objetos.append(malha)
-                print(f"✅ {full_path.name} carregado.")
+                print(f"{full_path.name} carregado: {malha.n_triangulos} triângulos, {malha.n_vertices} vértices.")
             except Exception as e:
-                print(f"❌ Erro ao processar {full_path.name}: {e}")
+                print(f"Erro ao processar {full_path.name}: {e}")
 
     return objetos
 
@@ -85,7 +105,6 @@ def renderizar(scene_path="utils/input/monkeyScene.json", output_path="out.ppm")
     objetos     = criar_objetos(scene, scene_path)
 
     print(f"Iniciando renderização ({largura}x{altura})...")
-    # Newline='\n' evita corrupção de arquivo no Windows[cite: 2]
     with open(output_path, "w", encoding="ascii", newline='\n') as f:
         f.write(f"P3\n{largura} {altura}\n255\n")
         for j in range(altura):
