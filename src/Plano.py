@@ -37,3 +37,7 @@ class Plano:
         if t > 1e-6:
             return t
         return None
+
+    def normal_em(self, ponto):
+        """Normal unitária constante do plano."""
+        return self.normal

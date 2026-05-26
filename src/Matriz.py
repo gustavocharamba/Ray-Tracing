@@ -16,14 +16,21 @@ class Matriz:
                 [0.0, 0.0, 0.0, 1.0],
             ]
         else:
+            if len(dados) != 4 or any(len(linha) != 4 for linha in dados):
+                raise ValueError("Matriz de transformação deve ter dimensões 4x4.")
             self.dados = [[float(valor) for valor in linha] for linha in dados]
 
     def __matmul__(self, outra):
+        if not isinstance(outra, Matriz):
+            raise TypeError("Multiplicação de matrizes espera outra instância de Matriz.")
         resultado = [[0.0 for _ in range(4)] for _ in range(4)]
         for i in range(4):
             for j in range(4):
                 resultado[i][j] = sum(self.dados[i][k] * outra.dados[k][j] for k in range(4))
         return Matriz(resultado)
+
+    def __repr__(self):
+        return f"Matriz({self.dados})"
 
     def aplicar_ponto(self, ponto: Ponto) -> Ponto:
         x, y, z = ponto.x, ponto.y, ponto.z

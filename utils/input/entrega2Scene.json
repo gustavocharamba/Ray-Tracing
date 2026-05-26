@@ -1,0 +1,64 @@
+{
+  "globalLight": [0.15, 0.15, 0.15],
+
+  "materials": {
+    "chao": {
+      "color": [0.55, 0.55, 0.55]
+    },
+    "cubo_azul": {
+      "color": [0.2, 0.4, 0.9]
+    },
+    "macaco_laranja": {
+      "color": [0.85, 0.45, 0.1]
+    }
+  },
+
+  "camera": {
+    "lookfrom": [0, 3, -8],
+    "lookat":   [0, 0,  0],
+    "upVector": [0, 1,  0],
+    "image_width":  600,
+    "image_height": 400,
+    "screen_distance": 1.5
+  },
+
+  "lights": [
+    {
+      "name": "Luz principal",
+      "position": [5, 10, -5],
+      "color": [1.0, 1.0, 1.0]
+    }
+  ],
+
+  "objects": [
+    {
+      "name": "Chao",
+      "type": "plane",
+      "point_on_plane": [0, -1.5, 0],
+      "normal": [0, 1, 0],
+      "material": "chao"
+    },
+    {
+      "name": "Cubo (azul, rotacionado 45° em Y)",
+      "type": "mesh",
+      "path": "utils/input/cubo.obj",
+      "material": "cubo_azul",
+      "transform": [
+        { "type": "scaling",     "factors": [1.2, 1.2, 1.2] },
+        { "type": "rotation",    "angle":   [0, 0.785398, 0] },
+        { "type": "translation", "vector":  [-2.5, -0.3, 1.0] }
+      ]
+    },
+    {
+      "name": "Macaco Suzanne (laranja)",
+      "type": "mesh",
+      "path": "utils/input/monkey.obj",
+      "material": "macaco_laranja",
+      "transform": [
+        { "type": "scaling",     "factors": [1.4, 1.4, 1.4] },
+        { "type": "rotation",    "angle":   [0, 0, 0] },
+        { "type": "translation", "vector":  [2.2, 0.2, 1.0] }
+      ]
+    }
+  ]
+}

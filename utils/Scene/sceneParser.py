@@ -78,7 +78,7 @@ class SceneJsonLoader:
             ka=ColorData(0, 0, 0),
             kr=ColorData(0, 0, 0),
             kt=ColorData(0, 0, 0),
-            ns=0.0, ni=1.0, d=1.0,
+            ns=1.0, ni=1.0, d=1.0,
         )
 
     @staticmethod
@@ -86,6 +86,7 @@ class SceneJsonLoader:
         m = SceneJsonLoader._make_default_material(fallback_name)
         if "name"  in node: m.name  = str(node["name"])
         if "color" in node: m.color = SceneJsonLoader._parse_color(node["color"], f"{m.name}.color")
+        if "kd"    in node: m.color = SceneJsonLoader._parse_color(node["kd"],    f"{m.name}.kd")
         if "ka"    in node: m.ka    = SceneJsonLoader._parse_color(node["ka"],    f"{m.name}.ka")
         if "ks"    in node: m.ks    = SceneJsonLoader._parse_color(node["ks"],    f"{m.name}.ks")
         if "kr"    in node: m.kr    = SceneJsonLoader._parse_color(node["kr"],    f"{m.name}.kr")

@@ -51,3 +51,7 @@ class Esfera:
         if t2 > EPS:
             return t2
         return None
+
+    def normal_em(self, ponto: Ponto):
+        """Normal unitária da esfera no ponto de interseção."""
+        return (ponto - self.centro).normalizar()

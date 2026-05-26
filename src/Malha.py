@@ -8,7 +8,8 @@ from src.Matriz import Matriz
 class Malha:
     def __init__(self, obj_reader, matriz_transformacao=None, material=None):
         """Inicializa a malha triangular a partir de um ObjReader."""
-        self.n_vertices = len(obj_reader.get_vertices())
+        vertices_lidos = obj_reader.get_vertices()
+        self.n_vertices = len(vertices_lidos)
         if self.n_vertices < 3:
             raise ValueError("O número total de vértices deve ser >= 3.")
 
@@ -19,22 +20,31 @@ class Malha:
         self.material = material
 
         matriz = matriz_transformacao if matriz_transformacao else Matriz()
-        self.lista_vertices = [matriz.aplicar_ponto(v) for v in obj_reader.get_vertices()]
+        self.matriz_transformacao = matriz
+        self.lista_vertices = [matriz.aplicar_ponto(v) for v in vertices_lidos]
+        self.normais_obj = [
+            self._normalizar_vetor(matriz.aplicar_vetor(n))
+            for n in obj_reader.get_normals()
+        ]
 
-        self.O_d = self._cor_difusa(material, obj_reader.get_kd())
+        self.O_d = self._normalizar_cor(self._cor_difusa(material, obj_reader))
         if not self._material_tem_cor(material):
             self.material = SimpleNamespace(
                 color=SimpleNamespace(r=self.O_d.x, g=self.O_d.y, b=self.O_d.z)
             )
         self.lista_indices = []
+        self.indices_normais = []
+        self.materiais_triangulos = []
         self.normais_triangulos = []
         self.normais_vertices = []
+        self.ultimo_indice_triangulo = None
+        self.ultimo_barycentrico = None
         self._construir_geometria_e_normais(faces_lidas)
 
-    def _cor_difusa(self, material, kd_obj):
+    def _cor_difusa(self, material, obj_reader):
         if self._material_tem_cor(material):
             return Vetor(material.color.r, material.color.g, material.color.b)
-        return kd_obj
+        return self._kd_obj(obj_reader)
 
     def _material_tem_cor(self, material):
         if material is None or not hasattr(material, "color"):
@@ -42,8 +52,25 @@ class Malha:
         cor = material.color
         return bool(getattr(material, "name", "")) or cor.r != 0 or cor.g != 0 or cor.b != 0
 
-    def _get_modulo(self, v):
-        return math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)
+    def _kd_obj(self, obj_reader):
+        for face in obj_reader.get_faces():
+            kd = getattr(face.material, "kd", None)
+            if kd is not None and (kd.x != 0 or kd.y != 0 or kd.z != 0):
+                return kd
+        return obj_reader.get_kd()
+
+    def _normalizar_cor(self, cor):
+        return Vetor(
+            max(0.0, min(1.0, cor.x)),
+            max(0.0, min(1.0, cor.y)),
+            max(0.0, min(1.0, cor.z)),
+        )
+
+    def _normalizar_vetor(self, vetor, fallback=None):
+        mag = math.sqrt(vetor.x ** 2 + vetor.y ** 2 + vetor.z ** 2)
+        if mag > 0:
+            return Vetor(vetor.x / mag, vetor.y / mag, vetor.z / mag)
+        return fallback if fallback is not None else Vetor(0.0, 0.0, 0.0)
 
     def _construir_geometria_e_normais(self, faces):
         for face in faces:
@@ -53,38 +80,54 @@ class Malha:
                 if idx < 0 or idx >= self.n_vertices:
                     raise ValueError(f"Índice de vértice fora dos limites: {idx}")
             self.lista_indices.append(face.vertice_indice[:])
+            self.indices_normais.append(face.normal_indice[:])
+            self.materiais_triangulos.append(face.material)
 
         for indices in self.lista_indices:
             v0 = self.lista_vertices[indices[0]]
             v1 = self.lista_vertices[indices[1]]
             v2 = self.lista_vertices[indices[2]]
             normal = (v1 - v0).prodVetorial(v2 - v0)
-
-            mag = self._get_modulo(normal)
-            if mag > 0:
-                normal = Vetor(normal.x / mag, normal.y / mag, normal.z / mag)
-            else:
-                normal = Vetor(0.0, 0.0, 0.0)
-            self.normais_triangulos.append(normal)
+            self.normais_triangulos.append(self._normalizar_vetor(normal))
 
         self.normais_vertices = [Vetor(0.0, 0.0, 0.0) for _ in range(self.n_vertices)]
+        contagem_vertices = [0 for _ in range(self.n_vertices)]
         for i in range(self.n_triangulos):
             n = self.normais_triangulos[i]
             for idx in self.lista_indices[i]:
                 self.normais_vertices[idx] = self.normais_vertices[idx] + n
+                contagem_vertices[idx] += 1
 
         for i in range(self.n_vertices):
-            mag = self._get_modulo(self.normais_vertices[i])
-            if mag > 0:
-                nv = self.normais_vertices[i]
-                self.normais_vertices[i] = Vetor(nv.x / mag, nv.y / mag, nv.z / mag)
+            if contagem_vertices[i] > 0:
+                self.normais_vertices[i] = self._normalizar_vetor(
+                    self.normais_vertices[i] / contagem_vertices[i],
+                    fallback=Vetor(0.0, 1.0, 0.0),
+                )
             else:
-                self.normais_vertices[i] = Vetor(0, 1, 0)
+                self.normais_vertices[i] = Vetor(0.0, 1.0, 0.0)
+
+    def _normal_obj_interpolada(self, indice_triangulo, fallback):
+        indices_normais = self.indices_normais[indice_triangulo]
+        if self.ultimo_barycentrico is None:
+            return fallback
+        if any(idx < 0 or idx >= len(self.normais_obj) for idx in indices_normais):
+            return None
+
+        w0, w1, w2 = self.ultimo_barycentrico
+        normal = (
+            self.normais_obj[indices_normais[0]] * w0
+            + self.normais_obj[indices_normais[1]] * w1
+            + self.normais_obj[indices_normais[2]] * w2
+        )
+        return self._normalizar_vetor(normal, fallback=fallback)
 
     def intersectar(self, raio):
         """Retorna o menor t positivo de interseção raio-triângulo."""
         t_min, EPSILON = float("inf"), 1e-6
-        for indices in self.lista_indices:
+        indice_atingido = None
+        barycentrico = None
+        for i, indices in enumerate(self.lista_indices):
             v0 = self.lista_vertices[indices[0]]
             v1 = self.lista_vertices[indices[1]]
             v2 = self.lista_vertices[indices[2]]
@@ -107,4 +150,34 @@ class Malha:
 
             if EPSILON < t < t_min:
                 t_min = t
+                indice_atingido = i
+                barycentrico = (1.0 - u - v, u, v)
+
+        self.ultimo_indice_triangulo = indice_atingido
+        self.ultimo_barycentrico = barycentrico
         return t_min if t_min != float("inf") else None
+
+    def normal_em(self, ponto):
+        """Normal no ponto atingido, interpolada pelas normais médias dos vértices."""
+        if self.ultimo_indice_triangulo is None:
+            return Vetor(0.0, 1.0, 0.0)
+
+        fallback = self.normais_triangulos[self.ultimo_indice_triangulo]
+        normal_obj = self._normal_obj_interpolada(self.ultimo_indice_triangulo, fallback)
+        if normal_obj is not None:
+            return normal_obj
+
+        indices = self.lista_indices[self.ultimo_indice_triangulo]
+        if self.ultimo_barycentrico is None:
+            return fallback
+
+        w0, w1, w2 = self.ultimo_barycentrico
+        normal = (
+            self.normais_vertices[indices[0]] * w0
+            + self.normais_vertices[indices[1]] * w1
+            + self.normais_vertices[indices[2]] * w2
+        )
+        return self._normalizar_vetor(
+            normal,
+            fallback=fallback,
+        )

@@ -40,7 +40,7 @@ class MaterialData:
     ka:    ColorData = field(default_factory=ColorData)  # ambiente
     kr:    ColorData = field(default_factory=ColorData)  # reflexivo
     kt:    ColorData = field(default_factory=ColorData)  # transmissivo
-    ns:    float     = 0.0   # rugosidade / brilho
+    ns:    float     = 1.0   # rugosidade / brilho
     ni:    float     = 1.0   # índice de refração
     d:     float     = 1.0   # opacidade
 
