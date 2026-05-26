@@ -1,3 +1,4 @@
+import subprocess
 import sys
 from pathlib import Path
 
@@ -216,7 +217,7 @@ def renderizar(scene_path="utils/input/entrega2Scene.json", output_path="out.ppm
     C, u, v, w = base_camera(scene)
     objetos     = criar_objetos(scene, scene_path)
 
-    print(f"Iniciando renderização ({largura}x{altura})...")
+    print(f"Iniciando renderização ({largura}x{altura})...", flush=True)
     with open(output_path, "w", encoding="ascii", newline='\n') as f:
         f.write(f"P3\n{largura} {altura}\n255\n")
         for j in range(altura):
@@ -234,9 +235,18 @@ def renderizar(scene_path="utils/input/entrega2Scene.json", output_path="out.ppm
                 else:
                     r = g = b = 0
                 f.write(f"{r} {g} {b}\n")
-    print(f"Render finalizado: {output_path}")
+    print(f"Render finalizado: {output_path}", flush=True)
+
+def converter_saida_ppm(output_path):
+    script_convert = Path(__file__).resolve().parent / "utils" / "convert_ppm.py"
+    try:
+        sys.stdout.flush()
+        subprocess.run([sys.executable, str(script_convert), output_path], check=True)
+    except Exception as e:
+        print(f"ERRO ao converter PPM para JPG: {e}")
 
 if __name__ == "__main__":
-    scene_file = sys.argv[1] if len(sys.argv) > 1 else "utils/input/monkeyScene.json"
+    scene_file = sys.argv[1] if len(sys.argv) > 1 else "utils/input/caso3.json"
     output_file = sys.argv[2] if len(sys.argv) > 2 else "out.ppm"
     renderizar(scene_file, output_file)
+    converter_saida_ppm(output_file)

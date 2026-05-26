@@ -6,6 +6,8 @@ from src.Matriz import Matriz
 
 
 class Malha:
+    TRIANGULOS_POR_FOLHA = 4
+
     def __init__(self, obj_reader, matriz_transformacao=None, material=None):
         """Inicializa a malha triangular a partir de um ObjReader."""
         vertices_lidos = obj_reader.get_vertices()
@@ -40,6 +42,8 @@ class Malha:
         self.ultimo_indice_triangulo = None
         self.ultimo_barycentrico = None
         self._construir_geometria_e_normais(faces_lidas)
+        self._precalcular_triangulos()
+        self.bvh = self._construir_bvh(list(range(self.n_triangulos)))
 
     def _cor_difusa(self, material, obj_reader):
         if self._material_tem_cor(material):
@@ -71,6 +75,120 @@ class Malha:
         if mag > 0:
             return Vetor(vetor.x / mag, vetor.y / mag, vetor.z / mag)
         return fallback if fallback is not None else Vetor(0.0, 0.0, 0.0)
+
+    def _bbox_vertices(self, vertices):
+        xs = [v.x for v in vertices]
+        ys = [v.y for v in vertices]
+        zs = [v.z for v in vertices]
+        return (
+            (min(xs), min(ys), min(zs)),
+            (max(xs), max(ys), max(zs)),
+        )
+
+    def _unir_bboxes(self, bbox_a, bbox_b):
+        min_a, max_a = bbox_a
+        min_b, max_b = bbox_b
+        return (
+            (
+                min(min_a[0], min_b[0]),
+                min(min_a[1], min_b[1]),
+                min(min_a[2], min_b[2]),
+            ),
+            (
+                max(max_a[0], max_b[0]),
+                max(max_a[1], max_b[1]),
+                max(max_a[2], max_b[2]),
+            ),
+        )
+
+    def _bbox_indices_triangulos(self, indices_triangulos):
+        bbox = self.bboxes_triangulos[indices_triangulos[0]]
+        for indice in indices_triangulos[1:]:
+            bbox = self._unir_bboxes(bbox, self.bboxes_triangulos[indice])
+        return bbox
+
+    def _eixo_mais_longo(self, bbox):
+        minimo, maximo = bbox
+        extensoes = (
+            maximo[0] - minimo[0],
+            maximo[1] - minimo[1],
+            maximo[2] - minimo[2],
+        )
+        return max(range(3), key=lambda eixo: extensoes[eixo])
+
+    def _precalcular_triangulos(self):
+        self.bboxes_triangulos = []
+        self.centroides_triangulos = []
+        self.arestas_triangulos = []
+
+        for indices in self.lista_indices:
+            v0 = self.lista_vertices[indices[0]]
+            v1 = self.lista_vertices[indices[1]]
+            v2 = self.lista_vertices[indices[2]]
+            bbox = self._bbox_vertices([v0, v1, v2])
+            self.bboxes_triangulos.append(bbox)
+            self.centroides_triangulos.append((
+                (v0.x + v1.x + v2.x) / 3.0,
+                (v0.y + v1.y + v2.y) / 3.0,
+                (v0.z + v1.z + v2.z) / 3.0,
+            ))
+            self.arestas_triangulos.append((v1 - v0, v2 - v0))
+
+    def _construir_bvh(self, indices_triangulos):
+        bbox = self._bbox_indices_triangulos(indices_triangulos)
+
+        if len(indices_triangulos) <= self.TRIANGULOS_POR_FOLHA:
+            return SimpleNamespace(
+                bbox=bbox,
+                esquerda=None,
+                direita=None,
+                indices_triangulos=indices_triangulos,
+            )
+
+        eixo = self._eixo_mais_longo(bbox)
+        indices_ordenados = sorted(
+            indices_triangulos,
+            key=lambda indice: self.centroides_triangulos[indice][eixo],
+        )
+        meio = len(indices_ordenados) // 2
+
+        return SimpleNamespace(
+            bbox=bbox,
+            esquerda=self._construir_bvh(indices_ordenados[:meio]),
+            direita=self._construir_bvh(indices_ordenados[meio:]),
+            indices_triangulos=None,
+        )
+
+    def _intersectar_bbox(self, raio, bbox, t_limite=float("inf")):
+        t_min = -float("inf")
+        t_max = t_limite
+        minimo, maximo = bbox
+        origem = (raio.origem.x, raio.origem.y, raio.origem.z)
+        direcao = (raio.direcao.x, raio.direcao.y, raio.direcao.z)
+
+        for eixo in range(3):
+            origem_eixo = origem[eixo]
+            direcao_eixo = direcao[eixo]
+
+            if abs(direcao_eixo) < 1e-12:
+                if origem_eixo < minimo[eixo] or origem_eixo > maximo[eixo]:
+                    return None
+                continue
+
+            inv_d = 1.0 / direcao_eixo
+            t0 = (minimo[eixo] - origem_eixo) * inv_d
+            t1 = (maximo[eixo] - origem_eixo) * inv_d
+            if t0 > t1:
+                t0, t1 = t1, t0
+
+            t_min = max(t_min, t0)
+            t_max = min(t_max, t1)
+            if t_min > t_max:
+                return None
+
+        if t_max <= 1e-6:
+            return None
+        return max(t_min, 0.0)
 
     def _construir_geometria_e_normais(self, faces):
         for face in faces:
@@ -122,36 +240,65 @@ class Malha:
         )
         return self._normalizar_vetor(normal, fallback=fallback)
 
+    def _intersectar_triangulo(self, raio, indice_triangulo, epsilon):
+        indices = self.lista_indices[indice_triangulo]
+        v0 = self.lista_vertices[indices[0]]
+        edge1, edge2 = self.arestas_triangulos[indice_triangulo]
+        h = raio.direcao.prodVetorial(edge2)
+        a = edge1.prodEscalar(h)
+
+        if -epsilon < a < epsilon:
+            return None, None
+
+        f = 1.0 / a
+        s = raio.origem - v0
+        u = f * s.prodEscalar(h)
+        if u < 0.0 or u > 1.0:
+            return None, None
+
+        q = s.prodVetorial(edge1)
+        v = f * raio.direcao.prodEscalar(q)
+        if v < 0.0 or (u + v) > 1.0:
+            return None, None
+
+        t = f * edge2.prodEscalar(q)
+        if t <= epsilon:
+            return None, None
+
+        return t, (1.0 - u - v, u, v)
+
     def intersectar(self, raio):
         """Retorna o menor t positivo de interseção raio-triângulo."""
         t_min, EPSILON = float("inf"), 1e-6
         indice_atingido = None
         barycentrico = None
-        for i, indices in enumerate(self.lista_indices):
-            v0 = self.lista_vertices[indices[0]]
-            v1 = self.lista_vertices[indices[1]]
-            v2 = self.lista_vertices[indices[2]]
-            edge1, edge2 = v1 - v0, v2 - v0
-            h = raio.direcao.prodVetorial(edge2)
-            a = edge1.prodEscalar(h)
+        t_bbox_raiz = self._intersectar_bbox(raio, self.bvh.bbox, t_min)
+        if t_bbox_raiz is None:
+            self.ultimo_indice_triangulo = None
+            self.ultimo_barycentrico = None
+            return None
 
-            if -EPSILON < a < EPSILON:
-                continue
-            f = 1.0 / a
-            s = raio.origem - v0
-            u = f * s.prodEscalar(h)
-            if u < 0.0 or u > 1.0:
-                continue
-            q = s.prodVetorial(edge1)
-            v = f * raio.direcao.prodEscalar(q)
-            if v < 0.0 or (u + v) > 1.0:
-                continue
-            t = f * edge2.prodEscalar(q)
+        pilha = [(t_bbox_raiz, self.bvh)]
+        while pilha:
+            _, no = pilha.pop()
 
-            if EPSILON < t < t_min:
-                t_min = t
-                indice_atingido = i
-                barycentrico = (1.0 - u - v, u, v)
+            if no.indices_triangulos is not None:
+                for indice_triangulo in no.indices_triangulos:
+                    t, bary = self._intersectar_triangulo(raio, indice_triangulo, EPSILON)
+                    if t is not None and t < t_min:
+                        t_min = t
+                        indice_atingido = indice_triangulo
+                        barycentrico = bary
+                continue
+
+            filhos_atingidos = []
+            for filho in (no.esquerda, no.direita):
+                t_bbox = self._intersectar_bbox(raio, filho.bbox, t_min)
+                if t_bbox is not None:
+                    filhos_atingidos.append((t_bbox, filho))
+
+            filhos_atingidos.sort(key=lambda item: item[0], reverse=True)
+            pilha.extend(filhos_atingidos)
 
         self.ultimo_indice_triangulo = indice_atingido
         self.ultimo_barycentrico = barycentrico

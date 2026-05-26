@@ -1,0 +1,66 @@
+{
+  "globalLight": [0.1, 0.1, 0.1],
+
+  "materials": {
+    "chao": {
+      "color": [0.2, 0.5, 0.8],
+      "ka": [0.2, 0.5, 0.8],
+      "ks": [0.0, 0.0, 0.0],
+      "ns": 10
+    },
+    "cubo_azul": {
+      "color": [0.2, 0.4, 0.9]
+    },
+    "macaco_laranja": {
+      "color": [0.85, 0.45, 0.1]
+    }
+  },
+
+  "camera": {
+    "lookfrom": [0, 12, 15],
+    "lookat":   [0, 12, 0],
+    "upVector": [0, 1, 0],
+    "image_width": 600,
+    "image_height": 600,
+    "screen_distance": 1.0
+  },
+
+  "lights": [
+    {
+      "name": "Luz principal",
+      "position": [10, 25, 15],
+      "color": [1.0, 1.0, 1.0]
+    }
+  ],
+
+  "objects": [
+    {
+      "type": "plane",
+      "point_on_plane": [0, 0, 0],
+      "normal": [0, 1, 0],
+      "material": "chao"
+    },
+    {
+      "type": "mesh",
+      "relativePos": [0.0000, 5.0000, 0.0000],
+      "path": "utils/input/cubo.obj",
+      "material": "cubo_azul",
+      "transform": [
+          { "type": "scaling", "factors": [3, 3, 3] },
+          { "type": "rotation", "angle": [0, 0, 0] },
+          { "type": "translation", "vector": [0, 20, 0] }
+      ]
+    },
+    {
+      "type": "mesh",
+      "relativePos": [0.0000, 5.0000, 0.0000],
+      "path": "utils/input/macaco.obj",
+      "material": "macaco_laranja",
+      "transform": [
+          { "type": "scaling", "factors": [5, 5, 5] },
+          { "type": "rotation", "angle": [0, 0, 0] },
+          { "type": "translation", "vector": [0, 10, 0] }
+      ]
+    }
+  ]
+}
