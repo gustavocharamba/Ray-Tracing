@@ -47,7 +47,16 @@ Isso e importante porque um raio pode interceptar mais de um objeto, mas so o ma
 
 ## 3. Materiais e Coeficientes
 
-O modelo de Phong usa varios coeficientes do material: `kd`, `ka`, `ks` e `ns`. No projeto, a cor difusa tambem pode vir como `color`, entao o codigo converte esses campos para `Vetor`.
+O modelo de Phong usa os coeficientes de material pedidos no enunciado. Os coeficientes de cor ficam em `[0, 1]^3`, e o expoente de brilho precisa ser positivo:
+
+- `kd`: coeficiente difuso.
+- `ks`: coeficiente especular.
+- `ka`: coeficiente ambiental.
+- `kr`: coeficiente de reflexao.
+- `kt`: coeficiente de transmissao.
+- `eta > 0`: coeficiente de rugosidade/brilho. No codigo, ele vem do campo `ns`.
+
+No projeto, a cor difusa tambem pode vir como `color`, entao o codigo converte esses campos para `Vetor`.
 
 ```python
 def material_para_vetor(material, atributo, padrao=None):
@@ -75,7 +84,30 @@ if "kd" in node:
 
 Isso foi feito porque o enunciado chama a cor difusa de `kd`, mas cenas antigas do projeto ja usavam `color`. Assim, os dois formatos funcionam.
 
-## 4. Modelo de Phong
+## 4. Fontes de Luz
+
+A entrega pede fontes de luz pontuais e luz ambiente. No codigo, isso aparece nos dados da cena:
+
+```python
+class LightData:
+    pos: Ponto
+    color: ColorData
+
+class SceneData:
+    global_light: LightData
+    light_list: List[LightData]
+```
+
+`global_light` representa a luz ambiente `Ia`. Ela nao tem uma direcao especifica; por isso entra uma unica vez no calculo como `ka * Ia`.
+
+`light_list` guarda as luzes pontuais. Cada luz pontual possui:
+
+- `pos`: posicao da luz no espaco;
+- `color`: cor/intensidade da luz.
+
+Essas luzes precisam de posicao porque os termos difuso, especular e de sombra dependem da direcao entre o ponto atingido e a luz.
+
+## 5. Modelo de Phong
 
 A funcao principal da entrega 3 e `iluminar_phong`.
 
@@ -97,6 +129,8 @@ Aqui o codigo separa os coeficientes do material e inicia a cor com a luz ambien
 ```text
 ka * Ia
 ```
+
+O `eta` e calculado com `max(..., 1.0)` para garantir que o expoente de brilho seja sempre positivo, como pede o enunciado.
 
 O `observador` e o vetor `V` da equacao de Phong. Ele aponta do ponto de intersecao para a camera, porque os raios primarios saem da camera.
 
@@ -157,7 +191,7 @@ return limitar_cor(cor)
 
 Isso evita valores abaixo de `0` ou acima de `1` antes da conversao para RGB de `0` a `255`.
 
-## 5. Sombras
+## 6. Sombras
 
 As sombras foram implementadas em `esta_em_sombra`.
 
@@ -178,7 +212,7 @@ Esse metodo cria um raio secundario que sai do ponto de intersecao em direcao a 
 
 O `EPSILON_SOMBRA` serve para deslocar um pouco a origem do raio. Sem isso, por erro numerico, o raio de sombra poderia bater imediatamente na propria superficie que acabou de ser atingida.
 
-## 6. Normais dos Objetos
+## 7. Normais dos Objetos
 
 Phong depende da normal `N`, entao cada objeto precisa calcular sua normal no ponto atingido.
 
@@ -217,7 +251,7 @@ A malha guarda qual triangulo foi atingido durante a intersecao. Se o OBJ tiver 
 
 Essa parte e necessaria porque malhas sao formadas por varios triangulos, e cada ponto pode ter uma normal diferente dependendo da face atingida.
 
-## 7. Normal Orientada
+## 8. Normal Orientada
 
 Antes de iluminar, o codigo orienta a normal em relacao ao raio da camera.
 
@@ -235,7 +269,7 @@ def normal_orientada(obj, ponto, raio):
 
 Isso evita usar uma normal apontando para o lado errado. Em malhas OBJ, a ordem dos vertices pode fazer algumas faces ficarem com a normal invertida. Se isso acontecer, o produto `N . L` pode dar errado e a iluminacao fica escura ou invertida.
 
-## 8. Termos Recursivos Ignorados
+## 9. Termos Recursivos Ignorados
 
 A equacao completa tambem possui:
 
@@ -243,9 +277,14 @@ A equacao completa tambem possui:
 kr * Ir + kt * It
 ```
 
+Nessa parte:
+
+- `Ir` seria a cor RGB retornada por um raio refletido, em `[0, 255]^3`;
+- `It` seria a cor RGB retornada por um raio refratado, em `[0, 255]^3`.
+
 Esses termos representam reflexao e refracao. Eles foram deixados de fora porque a entrega 3 pede Phong sem recursao. Para calcular `Ir` e `It`, seria necessario disparar novos raios refletidos e refratados e chamar o ray-casting novamente.
 
-## 9. Arquivos Principais
+## 10. Arquivos Principais
 
 - `main.py`: contem o fluxo do render, Phong, sombras, busca de intersecao e orientacao da normal.
 - `src/Esfera.py`: calcula a normal da esfera.
