@@ -8,6 +8,8 @@ Os trechos abaixo mostram as partes principais do codigo da entrega 3 e explicam
 
 O fluxo principal fica em `main.py`, dentro de `renderizar`.
 
+Arquivo e linhas: `main.py:225-237`.
+
 ```python
 raio = gerar_raio(i, j, C, u, v, w, largura, altura, d)
 obj_atingido, t = encontrar_intersecao(raio, objetos)
@@ -30,6 +32,8 @@ Se nenhum objeto for atingido, o pixel continua preto. Se houver intersecao, o p
 ## 2. Intersecao Mais Proxima
 
 A funcao `encontrar_intersecao` procura o menor `t` positivo entre todos os objetos.
+
+Arquivo e linhas: `main.py:154-162`.
 
 ```python
 def encontrar_intersecao(raio, objetos):
@@ -58,6 +62,8 @@ O modelo de Phong usa os coeficientes de material pedidos no enunciado. Os coefi
 
 No projeto, a cor difusa tambem pode vir como `color`, entao o codigo converte esses campos para `Vetor`.
 
+Arquivo e linhas: `main.py:133-142`.
+
 ```python
 def material_para_vetor(material, atributo, padrao=None):
     valor = getattr(material, atributo, None)
@@ -75,6 +81,8 @@ def coeficiente_difuso(obj):
 
 No parser, `kd` foi aceito como alias de `color`:
 
+Arquivo e linhas: `utils/Scene/sceneParser.py:88-89`.
+
 ```python
 if "color" in node:
     m.color = SceneJsonLoader._parse_color(node["color"], f"{m.name}.color")
@@ -87,6 +95,8 @@ Isso foi feito porque o enunciado chama a cor difusa de `kd`, mas cenas antigas 
 ## 4. Fontes de Luz
 
 A entrega pede fontes de luz pontuais e luz ambiente. No codigo, isso aparece nos dados da cena:
+
+Arquivo e linhas: `utils/Scene/sceneSchema.py:49-52` e `utils/Scene/sceneSchema.py:83-86`.
 
 ```python
 class LightData:
@@ -110,6 +120,8 @@ Essas luzes precisam de posicao porque os termos difuso, especular e de sombra d
 ## 5. Modelo de Phong
 
 A funcao principal da entrega 3 e `iluminar_phong`.
+
+Arquivo e linhas: `main.py:175-184`.
 
 ```python
 def iluminar_phong(obj, ponto, normal, raio, scene, objetos):
@@ -136,6 +148,8 @@ O `observador` e o vetor `V` da equacao de Phong. Ele aponta do ponto de interse
 
 Depois vem o loop das luzes pontuais:
 
+Arquivo e linhas: `main.py:186-198`.
+
 ```python
 for luz in scene.light_list:
     vetor_luz = luz.pos - ponto
@@ -157,6 +171,8 @@ Esse trecho calcula `L`, que e o vetor do ponto ate a luz. O produto `N . L` med
 O teste de sombra acontece antes de somar a luz. Se algum objeto bloquear o caminho ate a fonte, essa luz e ignorada para aquele ponto.
 
 Quando a luz contribui, o codigo soma os termos difuso e especular:
+
+Arquivo e linhas: `main.py:200-207`.
 
 ```python
 il = cor_para_vetor(luz.color)
@@ -185,6 +201,8 @@ O vetor `R` e a direcao de reflexao da luz. O vetor `V` aponta para a camera. Qu
 
 No final, a cor e limitada:
 
+Arquivo e linha: `main.py:209`.
+
 ```python
 return limitar_cor(cor)
 ```
@@ -194,6 +212,8 @@ Isso evita valores abaixo de `0` ou acima de `1` antes da conversao para RGB de 
 ## 6. Sombras
 
 As sombras foram implementadas em `esta_em_sombra`.
+
+Arquivo e linhas: `main.py:164-173`.
 
 ```python
 def esta_em_sombra(ponto, normal, direcao_luz, distancia_luz, objetos):
@@ -218,6 +238,8 @@ Phong depende da normal `N`, entao cada objeto precisa calcular sua normal no po
 
 Na esfera:
 
+Arquivo e linhas: `src/Esfera.py:55-57`.
+
 ```python
 def normal_em(self, ponto: Ponto):
     return (ponto - self.centro).normalizar()
@@ -227,6 +249,8 @@ A normal da esfera e o vetor que sai do centro em direcao ao ponto da superficie
 
 No plano:
 
+Arquivo e linhas: `src/Plano.py:41-43`.
+
 ```python
 def normal_em(self, ponto):
     return self.normal
@@ -235,6 +259,8 @@ def normal_em(self, ponto):
 O plano tem uma normal constante, entao nao depende do ponto atingido.
 
 Na malha, a normal depende do triangulo atingido:
+
+Arquivo e linhas: `src/Malha.py:307-315`.
 
 ```python
 def normal_em(self, ponto):
@@ -254,6 +280,8 @@ Essa parte e necessaria porque malhas sao formadas por varios triangulos, e cada
 ## 8. Normal Orientada
 
 Antes de iluminar, o codigo orienta a normal em relacao ao raio da camera.
+
+Arquivo e linhas: `main.py:144-152`.
 
 ```python
 def normal_orientada(obj, ponto, raio):
