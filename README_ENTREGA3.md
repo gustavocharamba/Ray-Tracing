@@ -25,9 +25,15 @@ else:
     r = g = b = 0
 ```
 
-Esse trecho substitui o comportamento antigo, que retornava apenas a cor do material. Agora o codigo precisa guardar o objeto atingido e a distancia `t`, porque o modelo de Phong precisa calcular o ponto exato da intersecao, a normal naquele ponto, a direcao da luz e a direcao da camera.
+Esse trecho e o ponto onde o ray-casting deixa de ser apenas "qual objeto foi atingido?" e passa a responder "como esse ponto deve ser iluminado?". A variavel `t` e a distancia ao longo do raio, isto e, o parametro da equacao:
 
-Se nenhum objeto for atingido, o pixel continua preto. Se houver intersecao, o programa calcula a iluminacao antes de escrever a cor no `.ppm`.
+```text
+P = O + t * D
+```
+
+`O` e a origem do raio, `D` e sua direcao, e `P` e o ponto real da superficie atingida. Esse ponto e necessario porque Phong nao ilumina o objeto inteiro de uma vez; ele ilumina o ponto visivel naquele pixel. A partir de `P`, o codigo consegue calcular a normal `N`, o vetor ate a luz `L`, o vetor ate a camera `V` e tambem a distancia ate a luz usada no teste de sombra.
+
+Se nenhum objeto for atingido, nao existe superficie para iluminar, entao o pixel fica preto. Se houver intersecao, o programa primeiro descobre o ponto visivel e so depois calcula a cor com Phong.
 
 ## 2. Intersecao Mais Proxima
 
@@ -47,7 +53,9 @@ def encontrar_intersecao(raio, objetos):
     return obj_atingido, t_min
 ```
 
-Isso e importante porque um raio pode interceptar mais de um objeto, mas so o mais proximo da camera deve aparecer no pixel. Separar essa etapa tambem deixa claro que primeiro o ray-casting descobre a superficie visivel e depois o Phong calcula a cor dessa superficie.
+Isso e importante porque um raio pode atravessar varios objetos no caminho. Por exemplo, ele pode bater primeiro em um cubo e depois em uma malha atras dele. O pixel deve mostrar apenas o primeiro objeto, porque ele bloqueia os objetos que estao atras. Por isso a funcao guarda o menor `t`: quanto menor o `t`, mais perto da camera esta a intersecao.
+
+Separar essa etapa tambem evita calcular iluminacao para superficies que nao aparecem. O Phong so deve ser executado depois que o codigo ja sabe qual e a superficie realmente visivel naquele pixel.
 
 ## 3. Materiais e Coeficientes
 
@@ -77,7 +85,9 @@ def coeficiente_difuso(obj):
     return material_para_vetor(obj.material, "color")
 ```
 
-`material_para_vetor` evita repetir conversoes de cor em varios pontos do codigo. `coeficiente_difuso` existe porque malhas podem ter uma cor difusa `O_d` vinda do material da propria malha, enquanto esferas e planos usam `obj.material.color`.
+`material_para_vetor` existe porque os coeficientes do material chegam como estruturas de cor (`r`, `g`, `b`), mas os calculos de Phong usam operacoes vetoriais e multiplicacao componente a componente. Converter esses valores para `Vetor` deixa o calculo de `ka * Ia`, `Il * kd` e `Il * ks` mais direto.
+
+`coeficiente_difuso` centraliza a escolha do `kd`. Esferas e planos usam `obj.material.color`; malhas podem guardar a cor difusa em `O_d`, principalmente quando a cor vem da leitura da malha/material. Assim, o restante do Phong nao precisa saber de onde o `kd` veio, apenas usa o valor ja resolvido.
 
 No parser, `kd` foi aceito como alias de `color`:
 
@@ -90,7 +100,7 @@ if "kd" in node:
     m.color = SceneJsonLoader._parse_color(node["kd"], f"{m.name}.kd")
 ```
 
-Isso foi feito porque o enunciado chama a cor difusa de `kd`, mas cenas antigas do projeto ja usavam `color`. Assim, os dois formatos funcionam.
+Isso foi feito porque o enunciado chama a cor difusa de `kd`, mas cenas antigas do projeto ja usavam `color`. Na pratica, os dois nomes representam o mesmo termo da equacao: a cor difusa que multiplica a intensidade da luz no termo `Il * kd * (N . L)`.
 
 ## 4. Fontes de Luz
 
@@ -108,14 +118,14 @@ class SceneData:
     light_list: List[LightData]
 ```
 
-`global_light` representa a luz ambiente `Ia`. Ela nao tem uma direcao especifica; por isso entra uma unica vez no calculo como `ka * Ia`.
+`global_light` representa a luz ambiente `Ia`. Ela nao tem uma direcao especifica e nao vem de um ponto no espaco; por isso nao precisa de vetor `L`, nao gera brilho especular e nao e bloqueada por sombra. Ela entra uma unica vez no calculo como `ka * Ia`.
 
 `light_list` guarda as luzes pontuais. Cada luz pontual possui:
 
 - `pos`: posicao da luz no espaco;
 - `color`: cor/intensidade da luz.
 
-Essas luzes precisam de posicao porque os termos difuso, especular e de sombra dependem da direcao entre o ponto atingido e a luz.
+Essas luzes precisam de posicao porque os termos difuso, especular e de sombra dependem da geometria entre o ponto atingido e a luz. A posicao permite calcular o vetor `L`, a distancia ate a luz e o raio de sombra que verifica se algum objeto bloqueia essa luz.
 
 ## 5. Modelo de Phong
 
@@ -136,7 +146,15 @@ def iluminar_phong(obj, ponto, normal, raio, scene, objetos):
     observador = (raio.origem - ponto).normalizar()
 ```
 
-Aqui o codigo separa os coeficientes do material e inicia a cor com a luz ambiente:
+Aqui o codigo separa os coeficientes do material que entram na equacao de Phong. Cada variavel corresponde a um termo do enunciado:
+
+- `ia`: intensidade da luz ambiente `Ia`;
+- `ka`: quanto o material recebe de luz ambiente;
+- `kd`: quanto o material espalha luz de forma difusa;
+- `ks`: quanto o material gera brilho especular;
+- `eta`: expoente que controla a concentracao do brilho.
+
+Depois disso, a cor comeca com a contribuicao ambiente:
 
 ```text
 ka * Ia
@@ -144,7 +162,7 @@ ka * Ia
 
 O `eta` e calculado com `max(..., 1.0)` para garantir que o expoente de brilho seja sempre positivo, como pede o enunciado.
 
-O `observador` e o vetor `V` da equacao de Phong. Ele aponta do ponto de intersecao para a camera, porque os raios primarios saem da camera.
+O `observador` e o vetor `V` da equacao de Phong. Ele aponta do ponto de intersecao para a camera, porque nos raios primarios o espectador e a propria camera. Esse vetor e usado no termo especular: se a direcao de reflexao `R` estiver alinhada com `V`, o observador ve um brilho mais forte naquele ponto.
 
 Depois vem o loop das luzes pontuais:
 
@@ -166,9 +184,11 @@ for luz in scene.light_list:
         continue
 ```
 
-Esse trecho calcula `L`, que e o vetor do ponto ate a luz. O produto `N . L` mede o quanto a superficie esta virada para a luz. Se esse valor for menor ou igual a zero, a luz esta atras da superficie e nao deve contribuir.
+Esse trecho calcula `L`, que e o vetor unitario do ponto ate a luz. Primeiro o codigo calcula `vetor_luz = luz.pos - ponto`; depois separa seu modulo em `distancia_luz` e normaliza a direcao em `direcao_luz`. A distancia e guardada porque o raio de sombra so deve procurar bloqueios entre o ponto e a luz, nao depois da luz.
 
-O teste de sombra acontece antes de somar a luz. Se algum objeto bloquear o caminho ate a fonte, essa luz e ignorada para aquele ponto.
+O produto `N . L` mede o quanto a superficie esta virada para a luz. Se `N` e `L` apontam em direcoes parecidas, o valor e alto e a superficie recebe bastante luz difusa. Se o valor e zero ou negativo, a luz esta de lado ou atras da superficie, entao ela nao deve contribuir naquele ponto.
+
+O teste de sombra acontece antes de somar a luz porque uma luz bloqueada nao deve contribuir nem no termo difuso nem no termo especular. Isso simula o caso fisico em que outro objeto esta entre o ponto iluminado e a fonte luminosa.
 
 Quando a luz contribui, o codigo soma os termos difuso e especular:
 
@@ -197,7 +217,9 @@ O termo especular representa o brilho:
 Il * ks * max(0, R . V)^eta
 ```
 
-O vetor `R` e a direcao de reflexao da luz. O vetor `V` aponta para a camera. Quando `R` e `V` ficam bem alinhados, o brilho aumenta. O `eta`, vindo de `ns`, controla se esse brilho fica mais aberto ou mais concentrado.
+O vetor `R` e a direcao em que a luz refletiria naquela normal. O vetor `V` aponta para a camera. O produto `R . V` mede se o brilho refletido esta indo na direcao do observador. Quando eles estao alinhados, o ponto recebe um brilho especular forte. Quando nao estao alinhados, o brilho some ou fica fraco.
+
+O `eta`, vindo de `ns`, controla a concentracao desse brilho. Um `eta` maior faz o brilho ficar menor e mais concentrado; um `eta` menor deixa o brilho mais espalhado.
 
 No final, a cor e limitada:
 
@@ -207,7 +229,7 @@ Arquivo e linha: `main.py:209`.
 return limitar_cor(cor)
 ```
 
-Isso evita valores abaixo de `0` ou acima de `1` antes da conversao para RGB de `0` a `255`.
+Isso evita valores abaixo de `0` ou acima de `1` antes da conversao para RGB de `0` a `255`. Sem esse limite, uma luz muito forte poderia gerar valores maiores que `1`, que depois virariam numeros acima de `255` no arquivo de imagem.
 
 ## 6. Sombras
 
@@ -228,13 +250,15 @@ def esta_em_sombra(ponto, normal, direcao_luz, distancia_luz, objetos):
     return False
 ```
 
-Esse metodo cria um raio secundario que sai do ponto de intersecao em direcao a luz. Se esse raio atinge outro objeto antes de chegar na luz, o ponto esta em sombra para aquela fonte luminosa.
+Esse metodo cria um raio secundario que sai do ponto de intersecao em direcao a luz. A ideia e simples: antes de somar a luz, o codigo pergunta "existe algum objeto entre este ponto e a fonte luminosa?". Se existir, a luz nao chega nesse ponto, entao ele esta em sombra para aquela fonte.
 
-O `EPSILON_SOMBRA` serve para deslocar um pouco a origem do raio. Sem isso, por erro numerico, o raio de sombra poderia bater imediatamente na propria superficie que acabou de ser atingida.
+O teste usa `distancia_luz` para aceitar apenas intersecoes que acontecem antes da luz. Se o raio encontrar um objeto depois da luz, esse objeto nao bloqueia a iluminacao e nao deve causar sombra.
+
+O `EPSILON_SOMBRA` serve para deslocar um pouco a origem do raio. Sem isso, por erro numerico, o raio de sombra poderia bater imediatamente na propria superficie que acabou de ser atingida, fazendo o objeto sombrear a si mesmo de forma falsa.
 
 ## 7. Normais dos Objetos
 
-Phong depende da normal `N`, entao cada objeto precisa calcular sua normal no ponto atingido.
+Phong depende da normal `N`, porque ela define a orientacao local da superficie. E a normal que diz se a superficie esta virada para a luz, de lado ou de costas. Por isso, sem `N`, nao da para calcular corretamente nem o termo difuso `N . L` nem a reflexao `R` usada no termo especular.
 
 Na esfera:
 
@@ -245,7 +269,7 @@ def normal_em(self, ponto: Ponto):
     return (ponto - self.centro).normalizar()
 ```
 
-A normal da esfera e o vetor que sai do centro em direcao ao ponto da superficie. Isso funciona porque todos os pontos da esfera estao a uma distancia constante do centro.
+A normal da esfera e o vetor que sai do centro em direcao ao ponto da superficie. Isso funciona porque, em uma esfera, a direcao perpendicular a superficie em qualquer ponto e exatamente a direcao do centro para esse ponto.
 
 No plano:
 
@@ -256,7 +280,7 @@ def normal_em(self, ponto):
     return self.normal
 ```
 
-O plano tem uma normal constante, entao nao depende do ponto atingido.
+O plano tem uma normal constante, entao nao depende do ponto atingido. Qualquer ponto do mesmo plano possui a mesma orientacao de superficie, por isso a mesma normal serve para todos os pixels que atingem esse plano.
 
 Na malha, a normal depende do triangulo atingido:
 
@@ -273,9 +297,9 @@ def normal_em(self, ponto):
         return normal_obj
 ```
 
-A malha guarda qual triangulo foi atingido durante a intersecao. Se o OBJ tiver normais (`vn`), o codigo usa essas normais interpoladas. Se nao tiver, usa a normal do triangulo como fallback.
+A malha guarda qual triangulo foi atingido durante a intersecao porque cada triangulo pode ter uma orientacao diferente. Se o OBJ tiver normais (`vn`), o codigo usa essas normais interpoladas para obter uma normal mais suave no ponto. Se nao tiver, usa a normal geometrica do triangulo como fallback.
 
-Essa parte e necessaria porque malhas sao formadas por varios triangulos, e cada ponto pode ter uma normal diferente dependendo da face atingida.
+Essa parte e necessaria porque uma malha nao e uma superficie unica simples como uma esfera ou um plano. Ela e formada por varios triangulos, e a iluminacao correta depende de saber exatamente qual triangulo o raio atingiu e qual normal deve ser usada naquele ponto.
 
 ## 8. Normal Orientada
 
@@ -295,7 +319,9 @@ def normal_orientada(obj, ponto, raio):
     return normal
 ```
 
-Isso evita usar uma normal apontando para o lado errado. Em malhas OBJ, a ordem dos vertices pode fazer algumas faces ficarem com a normal invertida. Se isso acontecer, o produto `N . L` pode dar errado e a iluminacao fica escura ou invertida.
+Isso evita usar uma normal apontando para o lado errado. O teste `normal.prodEscalar(raio.direcao) > 0` verifica se a normal esta apontando no mesmo sentido do raio, ou seja, para longe da camera. Nesse caso, ela e invertida para ficar voltada para o lado visivel.
+
+Essa correcao e importante em malhas OBJ, porque a ordem dos vertices pode fazer algumas faces ficarem com a normal invertida. Se a normal usada estiver do lado errado, o produto `N . L` pode ficar negativo mesmo quando a luz deveria iluminar a face.
 
 ## 9. Termos Recursivos Ignorados
 

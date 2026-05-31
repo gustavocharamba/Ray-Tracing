@@ -222,8 +222,10 @@ def renderizar(scene_path="utils/input/entrega2Scene.json", output_path="out.ppm
         f.write(f"P3\n{largura} {altura}\n255\n")
         for j in range(altura):
             for i in range(largura):
+
                 raio = gerar_raio(i, j, C, u, v, w, largura, altura, d)
                 obj_atingido, t = encontrar_intersecao(raio, objetos)
+
 
                 if obj_atingido:
                     ponto = raio.ponto_em(t)
